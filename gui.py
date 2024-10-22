@@ -3,6 +3,7 @@ import serial
 import time
 import pandas as pd
 import plotly.express as px
+
 # from plotly.graph_objects import Figure as figure
 # import matplotlib.pyplot as plt
 
