@@ -5,13 +5,29 @@ import numpy as np
 from scipy.integrate import odeint 
 import matplotlib.pyplot as plt 
 from simple_pid import PID
+from threading import Thread
 
 
 class Controller:
     def __init__(self,):
         self.stop_sim = False
         self.set_point_height = 0.025
+        self.fp_sim_hist = []
+        self.real_pcs_hist = []
+
         pass
+    
+    def run_fp_model_sim_async(self,):
+        fpsim_thread = Thread(target = self.fp_model_sim)
+        fpsim_thread.start()
+        fpsim_thread.join()
+    def run_real_pcs_async(self,):
+        real_pcs_thread = Thread(target = self.real_pcs)
+        real_pcs_thread.start()
+        real_pcs_thread.join()
+
+
+
     def fp_model_sim(self):
         st = time.time()
 
@@ -42,6 +58,8 @@ class Controller:
                 h         = odeint(fp_model, h_init, t, (v,))
                 h_current = h[-1]
                 st = t_now
+                self.fp_sim_hist.append((t_now,h_current))
+
         pass
     def real_pcs(self):
         SERIAL_PORT = '/dev/ttyUSB0'  # Update to your serial port
@@ -68,6 +86,7 @@ class Controller:
                 if arduino.is_open:
                     arduino.write(f"{op}\n".encode())
                 st = t_now
+                self.real_pcs_hist.append((t_now,h_current))
         pass
     def pinn_sim(self):
         pass
@@ -75,4 +94,4 @@ class Controller:
 print("hi")
 ctrlr = Controller()
 ctrlr.set_point_height = 0.10
-ctrlr.fp_model_sim()
+ctrlr.run_fp_model_sim_async()
