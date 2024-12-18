@@ -38,8 +38,7 @@ class DifferentialEqnThread(QThread):
             return dhdt
         
         h_current = 0.04
-        pid = PID(20.0, 1, 0, setpoint=self.set_point_height)
-        pid.output_limits = (0, 12)
+
         t_start =  time.time()
         while not self.stop_sim:
             time.sleep(1)
