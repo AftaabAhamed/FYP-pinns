@@ -1,9 +1,9 @@
 // Define the pins for the ultrasonic sensor
-#define TRIG_PIN D1  // Trigger pin connected to D1
-#define ECHO_PIN D2  // Echo pin connected to D2
+#define TRIG_PIN 3  // Trigger pin connected to D1
+#define ECHO_PIN 2  // Echo pin connected to D2
 
 // Define the pin for the flow rate sensor
-#define FLOW_SENSOR_PIN D7  // Flow rate sensor signal pin connected to D7
+#define FLOW_SENSOR_PIN 7  // Flow rate sensor signal pin connected to D7
 
 // Variables for flow rate calculation
 volatile int pulseCount = 0;     // Count the number of pulses from the flow sensor
@@ -20,9 +20,9 @@ float distance;
 
 
 // Define the pins for the motor control
-#define ENA D3  // ENA pin connected to D3
-#define IN1 D4  // IN1 pin connected to D4
-#define IN2 D5  // IN2 pin connected to D5
+#define ENA 4  // ENA pin connected to D3
+#define IN1 5  // IN1 pin connected to D4
+#define IN2 6  // IN2 pin connected to D5
 
 void setup() {
 
