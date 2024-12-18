@@ -5,6 +5,13 @@ from scipy.integrate import odeint
 from PyQt5.QtCore import pyqtSignal, QThread
 from simple_pid import PID
 import serial
+import queue
+import csv
+from datetime import datetime as dt
+
+q_deq = queue.Queue()
+q_real = queue.Queue()
+q_pinn = queue.Queue()
 
 class DifferentialEqnThread(QThread):
     update_height = pyqtSignal(float)
@@ -13,24 +20,27 @@ class DifferentialEqnThread(QThread):
         super().__init__()
         self.stop_sim = False
         self.set_point_height = set_point_height
+        self.hist = []
 
 
     def run(self):
         def fp_model(h, t, v):
             fmin = 0.022
             fmax = 0.033
-            f = fmax * v / 1023
+            f = (4.042*v - 2.866)/100000
+            if f < 0:
+                f = 0
             PI = m.pi
             d = 0.008
             r = 0.185
-            h0 = 0.025        
-            dhdt = (f - (0.6 * (PI * pow(d, 2)) * m.sqrt(2 * 9.81 * (h - h0)))) / (PI * (2 * r * h - pow(h, 2)))
+            h0 = 0.04       
+            dhdt = (f - (0.7 * (PI * pow(d, 2)) * m.sqrt(2 * 9.81 * (h - h0)))) / (PI * (2 * r * h - pow(h, 2)))
             return dhdt
-
-        h_current = 0.025
-        pid = PID(30.0, 1, 0, setpoint=self.set_point_height)
-        pid.output_limits = (0, 6)
-
+        
+        h_current = 0.04
+        pid = PID(20.0, 1, 0, setpoint=self.set_point_height)
+        pid.output_limits = (0, 12)
+        t_hist =  0
         while not self.stop_sim:
             time.sleep(1)
             pid.setpoint = self.set_point_height
@@ -39,11 +49,19 @@ class DifferentialEqnThread(QThread):
             h = odeint(fp_model, h_current, t, args=(v,))
             h_current = h[-1][0]
             self.update_height.emit(h_current)
-            print(self.set_point_height)
+            t_hist = t_hist+1
+            self.hist.append([t_hist,h_current])
+            q_deq.put(h_current)
+            # print(self.set_point_height)
 
     def stop(self):
         self.stop_sim = True
-
+        fields = ['time','height']
+        rows = self.hist
+        with open(f"dataset-folder/deq_data{dt.isoformat(dt.now())[:-10]}.csv",'w') as f:
+            write = csv.writer(f)
+            write.writerow(fields)
+            write.writerows(rows)
 
 class RealSystemThread(QThread):
     update_height = pyqtSignal(float)
@@ -53,35 +71,68 @@ class RealSystemThread(QThread):
         self.stop_sim = False
         self.set_point_height = set_point_height
 
-    def run(self):
-        SERIAL_PORT = '/dev/ttyUSB0'
-        BAUD_RATE = 9600
-        arduino = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+        self.hist = []
+        self.mode = "1"
 
+    def run(self):
+        SERIAL_PORT = '/dev/ttyACM0'
+        BAUD_RATE = 9600
+        self.arduino = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
         def read_from_arduino():
-            if arduino.in_waiting > 0:
-                line = arduino.readline().decode('utf-8').strip()
+            if self.arduino.in_waiting > 0:
+                line = self.arduino.readline().decode('utf-8').strip()
+                # print(line)
                 return line
+            # print(self.arduino.in_waiting )
             return None
 
-        pid = PID(30.0, 1, 0, setpoint=self.set_point_height)
-        pid.output_limits = (0, 6)
+        pid = PID(20.0, 1, 0, setpoint=self.set_point_height)
+        pid.output_limits = (0, 12)
+
+        t_hist = 0
+        h = 0.0401
+        hprev = h
 
         while not self.stop_sim:
             time.sleep(1)
             data = read_from_arduino()
-            if data:
+            
+            if data :
+                height = data.split()[-1] 
                 try:
-                    h = 0.18 - float(data)
+                    h = 0.178 - float(height)/100
+                    if abs(h - hprev) > 0.04:
+                        h = hprev
+
                     self.update_height.emit(h)
+                    q_real.put(h)
+                    self.hist.append([t_hist,h])
+
+                    if int(self.mode) == 2:
+                        h = q_deq.get()
+                    
                     op = pid(h)
-                    if arduino.is_open:
-                        arduino.write(f"{op}\n".encode())
-                except ValueError:
-                    print("Invalid data from Arduino")
+                    t_hist = t_hist+1
+                    if self.arduino.is_open:
+                        pwm = int(1023*op/12)
+                        print(pwm,h)
+                        self.arduino.write(f"{pwm}\n".encode())
+                    hprev = h
+                    
+
+                except Exception as e:
+                    print(f"Invalid data from Arduino{e}")
+
 
     def stop(self):
         self.stop_sim = True
+        fields = ['time','height']
+        rows = self.hist
+        with open(f"dataset-folder/real_data{dt.isoformat(dt.now())[:-10]}.csv",'w') as f:
+            write = csv.writer(f)
+            write.writerow(fields)
+            write.writerows(rows)
+
 
 
 class PINNModelThread(QThread):

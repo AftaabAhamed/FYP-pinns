@@ -52,7 +52,8 @@ class MainWindow(QMainWindow):
         self.diff_eqn_thread = DifferentialEqnThread(set_point_height=0.1)
         self.real_system_thread = RealSystemThread(set_point_height=0.1)
         self.pinn_thread = PINNModelThread(set_point_height=0.1)
-
+        # mode = input("input 0 for direct and 1 for model")
+        
         # Connect Signals to Update Plot
         self.diff_eqn_thread.update_height.connect(lambda h: self.update_plot(h, "Differential"))
         self.real_system_thread.update_height.connect(lambda h: self.update_plot(h, "Real System"))
