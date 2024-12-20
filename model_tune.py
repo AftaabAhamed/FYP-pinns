@@ -24,41 +24,42 @@ class DifferentialEqnThread(QThread):
 
 
     def run(self):
-        def fp_model(h, t, v):
-            fmin = 0.022
-            fmax = 0.033
-            f = (4.042*v - 2.866)/100000
-            if f < 0:
-                f = 0
-            PI = m.pi
-            d = 0.008
-            r = 0.185
-            h0 = 0.04       
-            dhdt = (f - (0.7 * (PI * pow(d, 2)) * m.sqrt(2 * 9.81 * (h - h0)))) / (PI * (2 * r * h - pow(h, 2)))
-            return dhdt
+    #     def fp_model(h, t, v):
+    #         fmin = 0.022
+    #         fmax = 0.033
+    #         f = (2.042*(v - 2.866))/100000
+    #         if f < 0:
+    #             f = 0
+    #         PI = m.pi
+    #         d = 0.008
+    #         r = 0.185
+    #         h0 = 0.04       
+    #         dhdt = (f - (0.3 * (PI * pow(d, 2)) * m.sqrt(2 * 9.81 * (h - h0)))) / (PI * (2 * r * h - pow(h, 2)))
+    #         return dhdt
         
-        h_current = 0.04
+    #     h_current = 0.04
 
         t_start =  time.time()
         while not self.stop_sim:
             time.sleep(1)
             v = self.set_point_height
             t = [0.0, 1.0]
-            h = odeint(fp_model, h_current, t, args=(v,))
-            h_current = h[-1][0]
-
+            # h = odeint(fp_model, h_current, t, args=(v,))
+            h = 0
+            h_current = h
+            
             t_hist = time.time()-t_start
             
-            self.update_height.emit((h_current,t_hist))
+            self.update_height.emit(v*10)
 
-            self.hist.append([t_hist,h_current])
+            self.hist.append([v,t_hist,h_current])
 
             q_deq.put(h_current)
             # print(self.set_point_height)
 
     def stop(self):
         self.stop_sim = True
-        fields = ['time','height']
+        fields = ['voltage','time','height']
         rows = self.hist
         with open(f"dataset-folder/deq_data{dt.isoformat(dt.now())[:-10]}.csv",'w') as f:
             write = csv.writer(f)
@@ -100,23 +101,24 @@ class RealSystemThread(QThread):
             if data :
                 height = data.split()[-1] 
                 try:
+                    op = self.set_point_height
                     h = 0.178 - float(height)/100
-                    if abs(h - hprev) > 0.04:
+                    if abs(h - hprev) > 0.02:
                         h = hprev
 
 
                     q_real.put(h)
                     t_hist = time.time()-t_start
-                    self.hist.append([t_hist,h])
-                    self.update_height.emit((h_current,t_hist))
+                    self.hist.append([op,t_hist,h])
+                    self.update_height.emit((h-0.036)*100/(.17 - .036))
 
                     if int(self.mode) == 2:
                         h = q_deq.get()
                     
-                    op = self.set_point_height
+                    
                     
                     if self.arduino.is_open:
-                        pwm = int(1023*op/12)
+                        pwm = int(255*(op+3)/12)
                         print(pwm,h)
                         self.arduino.write(f"{pwm}\n".encode())
                     hprev = h
@@ -128,9 +130,9 @@ class RealSystemThread(QThread):
 
     def stop(self):
         self.stop_sim = True
-        fields = ['time','height']
+        fields = ['voltage','time','height']
         rows = self.hist
-        with open(f"dataset-folder/real_data{dt.isoformat(dt.now())[:-10]}.csv",'w') as f:
+        with open(f"dataset-folder/real_data{dt.isoformat(dt.now())[:-10]}.csv",'w+') as f:
             write = csv.writer(f)
             write.writerow(fields)
             write.writerows(rows)

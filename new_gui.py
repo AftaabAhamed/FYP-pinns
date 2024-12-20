@@ -7,7 +7,7 @@ from PyQt5.QtCore import Qt
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from controller_sim import DifferentialEqnThread, RealSystemThread, PINNModelThread  # Import all three thread classes
+from model_tune import DifferentialEqnThread, RealSystemThread, PINNModelThread  # Import all three thread classes
 
 class MainWindow(QMainWindow):
     def __init__(self):
