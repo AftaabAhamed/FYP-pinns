@@ -44,7 +44,8 @@ class DifferentialEqnThread(QThread):
                     h = odeint(fp_model, h_current, t, args=(v,))
                     h_current = h[-1][0]
                 else:
-                    h_current = 0.1
+                    h = odeint(fp_model, h_current, t, args=(v,))
+                    h_current = h[-1][0]
                     v = self.set_point_height
                 current_time = time.strftime("%H:%M:%S")
                 self.update_height.emit(v, h_current, current_time)  # Emit voltage, height, and time
