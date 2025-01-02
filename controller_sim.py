@@ -44,7 +44,7 @@ class DifferentialEqnThread(QThread):
                     h = odeint(fp_model, h_current, t, args=(v,))
                     h_current = h[-1][0]
                 else:
-                    h = odeint(fp_model, h_current, t, args=(v,))
+                    h = odeint(fp_model, h_current, t, args=(self.set_point_height,))
                     h_current = h[-1][0]
                     v = self.set_point_height
                 current_time = time.strftime("%H:%M:%S")
