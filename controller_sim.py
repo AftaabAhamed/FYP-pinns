@@ -12,12 +12,13 @@ class DifferentialEqnThread(QThread):
     error_signal = pyqtSignal(str)  # Signal to pass the error message
 
 
-    def __init__(self, set_point_height=0.025, kp=30.0, ki=1.0, kd=0.0):
+    def __init__(self, set_point_height=0.025, kp=30.0, ki=1.0, kd=0.0, open_loop=False):
         super().__init__()
         self.stop_sim = False
         self.set_point_height = set_point_height
         self.pid = PID(kp, ki, kd, setpoint=self.set_point_height)
         self.pid.output_limits = (0, 12)  # Constrained PID output to 0-12 volts
+        self.open_loop = open_loop
 
     def run(self):
         try:
@@ -36,11 +37,15 @@ class DifferentialEqnThread(QThread):
 
             while not self.stop_sim:
                 time.sleep(1)
-                self.pid.setpoint = self.set_point_height
-                v = self.pid(h_current)
-                t = [0.0, 1.0]
-                h = odeint(fp_model, h_current, t, args=(v,))
-                h_current = h[-1][0]
+                if not self.open_loop:
+                    self.pid.setpoint = self.set_point_height
+                    v = self.pid(h_current)
+                    t = [0.0, 1.0]
+                    h = odeint(fp_model, h_current, t, args=(v,))
+                    h_current = h[-1][0]
+                else:
+                    h_current = 0.1
+                    v = self.set_point_height
                 current_time = time.strftime("%H:%M:%S")
                 self.update_height.emit(v, h_current, current_time)  # Emit voltage, height, and time
         except Exception as e:
@@ -57,12 +62,13 @@ class RealSystemThread(QThread):
     error_signal = pyqtSignal(str)  # Signal to pass the error message
 
 
-    def __init__(self, set_point_height=0.025, kp=30.0, ki=1.0, kd=0.0):
+    def __init__(self, set_point_height=0.025, kp=30.0, ki=1.0, kd=0.0, open_loop=False):
         super().__init__()
         self.stop_sim = False
         self.set_point_height = set_point_height
         self.pid = PID(kp, ki, kd, setpoint=self.set_point_height)
         self.pid.output_limits = (0, 12)  # Constrained PID output to 0-12 volts
+        self.open_loop = open_loop
 
     def run(self):
         try:
@@ -83,7 +89,10 @@ class RealSystemThread(QThread):
                     try:
                         h = 0.18 - float(data)
                         current_time = time.strftime("%H:%M:%S")
-                        voltage = self.pid(h)
+                        if not self.open_loop:
+                            voltage = self.pid(h)
+                        else:
+                            voltage = self.set_point_height
                         if arduino.is_open:
                             arduino.write(f"{voltage}\n".encode())  # Send voltage to Arduino
                         self.update_height.emit(voltage, h, current_time)  # Emit voltage, height, and time
@@ -103,12 +112,13 @@ class PINNModelThread(QThread):
     error_signal = pyqtSignal(str)  # Signal to pass the error message
 
 
-    def __init__(self, set_point_height=0.025, kp=30.0, ki=1.0, kd=0.0):
+    def __init__(self, set_point_height=0.025, kp=30.0, ki=1.0, kd=0.0, open_loop=False):
         super().__init__()
         self.stop_sim = False
         self.set_point_height = set_point_height
         self.pid = PID(kp, ki, kd, setpoint=self.set_point_height)
         self.pid.output_limits = (0, 12)  # Constrained PID output to 0-12 volts
+        self.open_loop = open_loop
 
     def run(self):
         try:
@@ -117,7 +127,10 @@ class PINNModelThread(QThread):
             while not self.stop_sim:
                 time.sleep(1)
                 current_time = time.strftime("%H:%M:%S")
-                voltage = self.pid(h_current)  # PID output (voltage)
+                if not self.open_loop:
+                    voltage = self.pid(h_current)  # PID output (voltage)
+                else:
+                    voltage = self.set_point_height
                 self.update_height.emit(voltage, h_current, current_time)  # Emit voltage, height, and time
         except Exception as e:
             print(f"Error in PINNModelThread: {e}")

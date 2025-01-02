@@ -13,6 +13,9 @@ from controller_sim import DifferentialEqnThread, RealSystemThread, PINNModelThr
 from simple_pid import PID
 import subprocess
 from datetime import datetime
+from block_diagram import ImageWithTextOverlay
+from pid_tuning import PIDController
+from model_params import ModelParameterCalculator
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -21,6 +24,7 @@ class MainWindow(QMainWindow):
         
         # Set window size directly
         self.setGeometry(100, 100, 1200, 800)  # Increased window size
+        self.showMaximized()
 
         # Main Layout
         self.main_widget = QWidget()
@@ -28,6 +32,18 @@ class MainWindow(QMainWindow):
 
         # Sidebar Layout
         self.sidebar_layout = QVBoxLayout()
+
+        # PID params
+        self.kp = 30
+        self.ki = 1
+        self.kd = 0
+        self.set_point_height = 0
+
+        # Model Calculation Class init
+        self.model_param = ModelParameterCalculator()
+
+        # PID calculator init
+        self.pid_calculator = PIDController()
 
         # Example Sidebar Components
         self.sidebar_label = QLabel("Navigation")
@@ -58,7 +74,7 @@ class MainWindow(QMainWindow):
 
         self.sidebar_widget = QWidget()
         self.sidebar_widget.setLayout(self.sidebar_layout)
-        self.sidebar_widget.setFixedWidth(200)
+        self.sidebar_widget.setFixedWidth(250)
 
         # Add Sidebar to the layout
         self.layout.addWidget(self.sidebar_widget, 0, 0, 2, 1)  # Occupies the left-most column
@@ -79,21 +95,21 @@ class MainWindow(QMainWindow):
         self.kp_label = QLabel("Proportional Gain (Kp):")
         self.controls_layout.addWidget(self.kp_label)
 
-        self.kp_input = QLineEdit("30.0")
+        self.kp_input = QLineEdit(f"{self.kp}")
         self.kp_input.setAlignment(Qt.AlignCenter)
         self.controls_layout.addWidget(self.kp_input)
 
         self.ki_label = QLabel("Integral Gain (Ki):")
         self.controls_layout.addWidget(self.ki_label)
 
-        self.ki_input = QLineEdit("1.0")
+        self.ki_input = QLineEdit(f"{self.ki}")
         self.ki_input.setAlignment(Qt.AlignCenter)
         self.controls_layout.addWidget(self.ki_input)
 
         self.kd_label = QLabel("Derivative Gain (Kd):")
         self.controls_layout.addWidget(self.kd_label)
 
-        self.kd_input = QLineEdit("0.0")
+        self.kd_input = QLineEdit(f"{self.kd}")
         self.kd_input.setAlignment(Qt.AlignCenter)
         self.controls_layout.addWidget(self.kd_input)
 
@@ -213,27 +229,19 @@ class MainWindow(QMainWindow):
         # self.bottom_left_layout.addSpacing(100)
 
         # Checkboxes for plot visibility
-        self.checkbox_diff_eqn = QCheckBox("Show Differential Eqn Plot")
+        self.checkbox_diff_eqn = QCheckBox("Differential Eqn Plot")
         self.checkbox_diff_eqn.setChecked(True)
-        self.bottom_left_layout.addWidget(self.checkbox_diff_eqn)
+        self.sidebar_layout.addWidget(self.checkbox_diff_eqn)
 
-        self.checkbox_real_system = QCheckBox("Show Real System Plot")
+        self.checkbox_real_system = QCheckBox("Real System Plot")
         self.checkbox_real_system.setChecked(True)
-        self.bottom_left_layout.addWidget(self.checkbox_real_system)
+        self.sidebar_layout.addWidget(self.checkbox_real_system)
 
-        self.checkbox_pinn = QCheckBox("Show PINN Model Plot")
+        self.checkbox_pinn = QCheckBox("PINN Model Plot")
         self.checkbox_pinn.setChecked(True)
-        self.bottom_left_layout.addWidget(self.checkbox_pinn)
+        self.sidebar_layout.addWidget(self.checkbox_pinn)
 
         # self.bottom_left_layout.addSpacing(100)
-
-        # Add Watermark to the Bottom Left Panel
-        self.watermark_label = QLabel("Project: Physics-Informed Neural Networks\n"
-                                      "Team: Shibin Fazil, Aftaab Ahamed, Karthik Manoranjan\n"
-                                      "Faculty In Charge: Dr. Chandrashekhar Bestha")
-        self.watermark_label.setAlignment(Qt.AlignCenter)
-        self.watermark_label.setStyleSheet("color: gray; font-size: 13px; font-style: italic;")
-        self.bottom_left_layout.addWidget(self.watermark_label)
 
         # self.bottom_left_layout.addStretch()
 
@@ -243,6 +251,36 @@ class MainWindow(QMainWindow):
         # Set the layout
         self.main_widget.setLayout(self.layout)
         self.setCentralWidget(self.main_widget)
+
+        # Block Diagram
+        self.image_path = "image_ol.png"  # Replace with your image path
+        self.text_data_OL = {
+            "height": (f"y: {1}", (630, 280)),
+            "voltage": (f"u: {self.set_point_height}", (210, 305)),
+            "flow_rate": ("Qin: 13.5", (405, 280))
+        }
+
+        self.text_data_CL = {
+            "kp": (f"Kp: {self.kp}", (325, 225)),
+            "ki": (f"Ki: {self.ki}", (325, 255)),
+            "kd": (f"Kd: {self.kd}", (325, 285)),
+            "set_point": (f"SP: {self.set_point_height}", (163, 240)),
+            "error": ("Error: 0.5", (245, 185)),
+            "height": ("y: 2.0", (630, 180)),
+            "voltage": ("u: 5.0", (383, 210)),
+            "flow_rate": ("Qin: 13.5", (445, 170))
+        }
+
+        self.block_diagram = ImageWithTextOverlay(self.image_path, self.text_data_OL)
+        self.bottom_left_layout.addWidget(self.block_diagram)
+
+        # # Add Watermark to the Bottom Left Panel
+        # self.watermark_label = QLabel("Project: Physics-Informed Neural Networks\n"
+        #                               "Team: Shibin Fazil, Aftaab Ahamed, Karthik Manoranjan\n"
+        #                               "Faculty In Charge: Dr. Chandrashekhar Bestha")
+        # self.watermark_label.setAlignment(Qt.AlignCenter)
+        # self.watermark_label.setStyleSheet("color: gray; font-size: 13px; font-style: italic;")
+        # self.bottom_left_layout.addWidget(self.watermark_label)
 
         # Initialize Threads
         self.diff_eqn_thread = DifferentialEqnThread(set_point_height=0.0, kp=30.0, ki=1.0, kd=0.0, open_loop=True)
@@ -281,13 +319,18 @@ class MainWindow(QMainWindow):
             self.tuning_param_label.setText("Input alpha value")
         else:
             self.tuning_param_label.setText("Input F value")
-
+        
     def confirm_tuning(self):
+        self.pid_calculator.calculate(method=self.select_tuning.currentText(), val=self.tuning_param_input.text())
         self.tuningTableLable.show()
         self.tuningTableWidget.show()
-        self.tuningTableWidget.setItem(0,1,QTableWidgetItem("1"))
-        self.tuningTableWidget.setItem(1,1,QTableWidgetItem("1"))
-        self.tuningTableWidget.setItem(2,1,QTableWidgetItem("1"))
+        kc, ki, kd = self.pid_calculator.kc, self.pid_calculator.ki, self.pid_calculator.kd
+        self.tuningTableWidget.setItem(0,1,QTableWidgetItem(f"{kc}"))
+        self.tuningTableWidget.setItem(1,1,QTableWidgetItem(f"{ki}"))
+        self.tuningTableWidget.setItem(2,1,QTableWidgetItem(f"{kd}"))
+        self.kp_input.setText(f"{kc}")
+        self.ki_input.setText(f"{ki}")
+        self.kd_input.setText(f"{kd}")
         self.sidebar_button3.setEnabled(False)
         self.sidebar_button4.setEnabled(True)
 
@@ -303,6 +346,7 @@ class MainWindow(QMainWindow):
         self.checkbox_pinn.hide()
         self.select_model.show()
         self.select_model_confirm.show()
+        self.block_diagram.hide()
 
     def confirm_model(self):
         keys = ["Differential_data", "Real System_data", "PINN_data"]
@@ -312,11 +356,16 @@ class MainWindow(QMainWindow):
             path = f"{keys[1]}_OL_{self.save_time}.csv"
         else:
             path = f"{keys[2]}_OL_{self.save_time}.csv"
+
+        self.model_param.load_csv(path)
+        self.model_param.calculate_parameters()
+        kp, tau, theta = self.model_param.get_parameters()
         self.tableLable.show()
         self.tableWidget.show()
-        self.tableWidget.setItem(0,1,QTableWidgetItem("1"))
-        self.tableWidget.setItem(1,1,QTableWidgetItem("1"))
-        self.tableWidget.setItem(2,1,QTableWidgetItem("1"))
+        self.tableWidget.setItem(0,1,QTableWidgetItem(f"{kp}"))
+        self.tableWidget.setItem(1,1,QTableWidgetItem(f"{tau}"))
+        self.tableWidget.setItem(2,1,QTableWidgetItem(f"{theta}"))
+        self.pid_calculator.set_parameters(kp, tau, theta)
         self.sidebar_button3.setEnabled(True)
         self.sidebar_button2.setEnabled(False)
 
@@ -333,6 +382,9 @@ class MainWindow(QMainWindow):
         self.real_system_thread.open_loop = True
         self.pinn_thread.open_loop = True
         self.modelCheck = False
+        self.block_diagram.image_path = "image_ol.png"
+        self.block_diagram.text_data = self.text_data_OL
+        self.block_diagram.update_image()
 
     def update_close_loop(self):
         """Update mode to Close-loop"""
@@ -361,6 +413,18 @@ class MainWindow(QMainWindow):
         self.diff_eqn_thread.open_loop = False
         self.real_system_thread.open_loop = False
         self.pinn_thread.open_loop = False
+
+        self.block_diagram.image_path = "image.png"
+        kc, ki, kd = self.pid_calculator.kc, self.pid_calculator.ki, self.pid_calculator.kd
+        self.text_data_CL["set_point"] = (f"SP: {self.setpoint_input.text()}", (163, 240))
+        self.text_data_CL["kp"] = (f"Kp: {kc}", (325, 225))
+        self.text_data_CL["ki"] = (f"Ki: {ki}", (325, 255))
+        self.text_data_CL["kd"] = (f"Kd: {kd}", (325, 285))
+        self.block_diagram.text_data = self.text_data_CL
+
+        self.block_diagram.update_image()
+        self.block_diagram.show()
+
         self.curr_loop = "CL"
         self.modelCheck = True
 
@@ -378,9 +442,9 @@ class MainWindow(QMainWindow):
         try:
             # Retrieve the input values
             set_point_height = float(self.setpoint_input.text())
-            kp = float(self.kp_input.text())
-            ki = float(self.ki_input.text())
-            kd = float(self.kd_input.text())
+            self.kp = float(self.kp_input.text())
+            self.ki = float(self.ki_input.text())
+            self.kd = float(self.kd_input.text())
         except ValueError:
             # Show an error message box if input is invalid
             error_message = QMessageBox()
@@ -394,16 +458,27 @@ class MainWindow(QMainWindow):
         self.diff_eqn_thread.set_point_height = set_point_height
         self.real_system_thread.set_point_height = set_point_height
         self.pinn_thread.set_point_height = set_point_height
+        self.text_data_OL["voltage"] = (f"u: {set_point_height}", (210, 305))
+        self.text_data_CL["set_point"] = (f"SP: {set_point_height}", (163, 240))
 
         # Update PID values in each thread
-        self.diff_eqn_thread.pid.tunings = (kp, ki, kd)  # Update PID gains
-        self.real_system_thread.pid.tunings = (kp, ki, kd)
-        self.pinn_thread.pid.tunings = (kp, ki, kd)
+        self.diff_eqn_thread.pid.tunings = (self.kp, self.ki, self.kd)  # Update PID gains
+        self.real_system_thread.pid.tunings = (self.kp, self.ki, self.kd)
+        self.pinn_thread.pid.tunings = (self.kp, self.ki, self.kd)
+
+        self.text_data_CL["kp"] = (f"Kp: {self.kp}", (325, 225))
+        self.text_data_CL["ki"] = (f"Ki: {self.ki}", (325, 255))
+        self.text_data_CL["kd"] = (f"Kd: {self.kd}", (325, 285))
 
         # Update setpoint for all threads' PID controllers
         self.diff_eqn_thread.pid.setpoint = set_point_height
         self.real_system_thread.pid.setpoint = set_point_height
         self.pinn_thread.pid.setpoint = set_point_height
+
+        if self.curr_loop == "OL":
+            self.block_diagram.params(self.text_data_OL)
+        elif self.curr_loop == "CL":
+            self.block_diagram.params(self.text_data_CL)
 
     def start_threads(self):
         self.height_data = {"Differential": [], "Real System": [], "PINN": []}
@@ -489,6 +564,20 @@ class MainWindow(QMainWindow):
         #     self.ax2.plot(self.time_data[model], self.voltage_data[model], label=f"{model} Model")
 
         # Configure X-axis
+
+        # Update the block diagram live
+        if self.curr_loop == "CL":
+            self.text_data_CL["height"] = (f"y: {round(height,2)}", (630, 180))
+            self.text_data_CL["volatge"] = (f"u: {round(voltage,2)}", (383, 210))
+            self.text_data_CL["error"] = (f"Error: {round(float(self.setpoint_input.text())-height,2)}", (245, 185))
+            self.text_data_CL["flow_rate"] = (f"Qin: {round(height*10,2)}", (445, 170))
+            self.block_diagram.params(self.text_data_CL)
+        else:
+            self.text_data_OL["height"] = (f"y: {round(height,2)}", (630, 280))
+            self.text_data_OL["voltage"] = (f"u: {self.setpoint_input.text()}", (210, 305))
+            self.text_data_OL["flow_rate"] = (f"Qin: {round(height*10,2)}", (405, 280))
+            self.block_diagram.params(self.text_data_OL)
+
         self.configure_x_axis(self.ax2, self.time_data)
         self.ax2.set_xlabel("Time")
         self.ax2.set_ylabel("u")

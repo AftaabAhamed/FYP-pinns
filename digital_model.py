@@ -48,7 +48,7 @@ class SphericalTankVisualizer:
         rl.end_mode3d()
 
         # Display information
-        rl.draw_text(f"Water Height: {water_height:.5f} cm", 10, 10, 20, rl.DARKGRAY)
+        rl.draw_text(f"Water Height: {water_height*100:.5f} cm", 10, 10, 20, rl.DARKGRAY)
         rl.draw_text(f"Time: {time}", 10, 40, 20, rl.DARKGRAY)
 
         rl.end_drawing()
@@ -89,7 +89,7 @@ class SphericalTankVisualizer:
 
 def main():
     visualizer = SphericalTankVisualizer()
-    rl.init_window(visualizer.screen_width, visualizer.screen_height, "3D Spherical Tank Visualization")
+    rl.init_window(visualizer.screen_width, visualizer.screen_height, "3D Tank Visualization")
     rl.set_target_fps(60)
 
     # Simulate water level changes using a for loop
