@@ -1,0 +1,5 @@
+raylib-py
+pyqt5
+simple-pid
+scipy
+pyserial
