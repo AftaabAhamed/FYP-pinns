@@ -1,10 +1,18 @@
 from PyQt5.QtCore import pyqtSignal, QThread
 from PyQt5.QtWidgets import QMessageBox
+from transfer_fn_model import TransferFnModel
 import time
 import math as m
 from scipy.integrate import odeint
 from simple_pid import PID
 import serial
+from keras import models
+import numpy as np                 
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+import joblib
+from collections import deque
+import control as ctl
 
 
 class DifferentialEqnThread(QThread):
@@ -203,6 +211,16 @@ class TransferFunctionModelThread(QThread):
         self.pid.output_limits = (0, 12)  # Constrained PID output to 0-12 volts
         self.open_loop = open_loop
 
+        # Define the tf model
+        self.time_step = 1
+        self.tf_model = TransferFnModel(initial_height=0.025, 
+                                   voltage_input1=0, 
+                                   voltage_input2=0, 
+                                   total_time=1, 
+                                   step_time=0,
+                                   )
+        
+
     def run(self):
         try:
             h_current = 0.025  # Example initial height
@@ -214,10 +232,22 @@ class TransferFunctionModelThread(QThread):
                 if not self.open_loop:
                     voltage = self.pid(h_current)  # PID output (voltage)
                 else:
+                    if self.time_step == 1:
+                        self.tf_model.initial_height = h_current                    
                     voltage = self.set_point_height
+                    self.tf_model.total_time = self.time_step
+                    self.tf_model.x0 = np.linalg.inv(self.tf_model.C) @ np.array([self.tf_model.initial_height])
+                    self.tf_model.time_vals = np.arange(0, self.time_step, self.tf_model.dt)
+                    self.tf_model.u = np.ones_like(self.tf_model.time_vals) * self.tf_model.voltage_input1
+                    self.tf_model.u[self.tf_model.time_vals >= self.tf_model.step_time] = self.tf_model.voltage_input2  # Step change
+
+                    _, y_out = self.tf_model.simulate()
+                    print(self.tf_model.initial_height)
+                    h_current = y_out if y_out.size == 1 else y_out[-1]
+                    self.time_step += 1
                 self.update_height.emit(voltage, h_current, current_time)  # Emit voltage, height, and time
         except Exception as e:
-            print(f"Error in PINNModelThread: {e}")
+            print(f"Error in TransferFunctionModelThread: {e}")
             # Emit error message to the main thread
             self.error_signal.emit(str(e))
 
@@ -229,31 +259,68 @@ class DataDrivenModelThread(QThread):
     update_height = pyqtSignal(float, float, float)  # Emit voltage, height, and time
     error_signal = pyqtSignal(str)  # Signal to pass the error message
 
-
     def __init__(self, set_point_height=0.025, kp=30.0, ki=1.0, kd=0.0, open_loop=False):
         super().__init__()
         self.stop_sim = False
         self.set_point_height = set_point_height
         self.pid = PID(kp, ki, kd, setpoint=self.set_point_height)
-        self.pid.output_limits = (0, 12)  # Constrained PID output to 0-12 volts
+        self.pid.output_limits = (0, 12)  # Constrain PID output to 0-12 volts
         self.open_loop = open_loop
+        self.model = models.load_model("trained_model.h5")  # Load trained model
+        self.scaler = joblib.load("scaler.pkl")  # Load the fitted scaler
+        self.sequence_length = 30
+        self.input_buffer = deque(maxlen=self.sequence_length) # Sequence to hold 30 timesteps
+
+        for _ in range(self.sequence_length):
+            self.input_buffer.append([0.025, 0.0])  # [voltage, height]
+
+    def preprocess_input(self, input_buffer, scaler):
+        # Convert buffer to a NumPy array and scale the data
+        data = np.array(input_buffer)
+        scaled_data = scaler.transform(data)
+        return scaled_data.reshape(1, self.sequence_length, 2)  # Reshape for LSTM input
 
     def run(self):
         try:
-            h_current = 0.025  # Example initial height
+            predicted_height = 0.025  # Starting height
+            initial_voltage = 0.0  # Starting voltage
 
             while not self.stop_sim:
                 time.sleep(1)
-                # current_time = time.strftime("%H:%M:%S")
                 current_time = time.time()
+
                 if not self.open_loop:
-                    voltage = self.pid(h_current)  # PID output (voltage)
+                    self.input_buffer = deque(maxlen=self.sequence_length) # Sequence to hold 30 timesteps
+                    for _ in range(self.sequence_length):
+                        self.input_buffer.append([0.025, 0.0])  # [voltage, height]
+
+                    new_voltage = self.pid(predicted_height) if len(self.input_buffer) == self.sequence_length else 0
+                    new_height = predicted_height if len(self.input_buffer) == self.sequence_length else 0.025
+
+                    new_height = 0.025
+                    new_voltage = 0.0
                 else:
-                    voltage = self.set_point_height
-                self.update_height.emit(voltage, h_current, current_time)  # Emit voltage, height, and time
+                    new_voltage = self.set_point_height
+                    new_height = predicted_height if len(self.input_buffer) == self.sequence_length else 0.025
+
+                    self.input_buffer.append([new_voltage, new_height])
+
+                    if len(self.input_buffer) == self.sequence_length:
+                        # Preprocess the input
+                        input_sequence = self.preprocess_input(self.input_buffer, self.scaler)
+
+                        # Make a prediction
+                        predicted_scaled_height = self.model.predict(input_sequence)[0][0]
+
+                        # Inverse transform the predicted height
+                        scaled_prediction = np.zeros((1, 2))  # Shape: (1, 2) for inverse transform
+                        scaled_prediction[0, 1] = predicted_scaled_height
+                        predicted_height = self.scaler.inverse_transform(scaled_prediction)[0, 1]
+
+                # Emit the updated values
+                self.update_height.emit(new_voltage, predicted_height, current_time)
         except Exception as e:
-            print(f"Error in PINNModelThread: {e}")
-            # Emit error message to the main thread
+            print(f"Error in DataDrivenModelThread: {e}")
             self.error_signal.emit(str(e))
 
     def stop(self):

@@ -101,7 +101,7 @@ def main():
             break
 
         # Read csv file for last input
-        with open('./data/Differential_data.csv') as file:
+        with open('data\Data Driven_data_OL_2025-01-07_13-49-08.csv') as file:
             reader = csv.reader(file)
             rows = list(reader)
             if rows:

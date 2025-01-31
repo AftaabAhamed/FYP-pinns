@@ -21,10 +21,16 @@ from pid_tuning import PIDController
 from model_params import ModelParameterCalculator
 import time
 from datetime import date
+from transfer_fn_model import TransferFnModel
+import pandas as pd
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+
+        with open('parameter.txt', 'w') as file:
+            file.write("0.0")
+
         self.setWindowTitle("Digital Twin Modelling")
         
         # Set window size directly
@@ -315,7 +321,7 @@ class MainWindow(QMainWindow):
         #                               "Faculty In Charge: Dr. Chandrashekhar Bestha")
         # self.watermark_label.setAlignment(Qt.AlignCenter)
         # self.watermark_label.setStyleSheet("color: gray; font-size: 13px; font-style: italic;")
-        # self.bottom_left_layout.addWidget(self.watermark_label)
+        # self.bottom_left_layout.addWidget(self.watermark_label)    
 
         # Initialize Threads
         self.diff_eqn_thread = DifferentialEqnThread(set_point_height=0.0, kp=30.0, ki=1.0, kd=0.0, open_loop=True)
@@ -500,6 +506,12 @@ class MainWindow(QMainWindow):
             error_message.setText("Please enter valid numerical values for all fields.")
             error_message.exec_()  # Show the message box
             return  # Return to prevent further execution
+        
+        # Update the data for the Transfer Function model
+        if self.curr_loop == "OL" and self.transfer_function_thread.set_point_height != set_point_height:
+            self.transfer_function_thread.time_step = 1
+            self.transfer_function_thread.tf_model.voltage_input1 = self.transfer_function_thread.set_point_height
+            self.transfer_function_thread.tf_model.voltage_input2 = set_point_height
 
         # Update set point height in all threads
         self.diff_eqn_thread.set_point_height = set_point_height
@@ -517,7 +529,7 @@ class MainWindow(QMainWindow):
 
         self.text_data_CL["kp"] = (f"Kp: {self.kp}", (310, 205), "gray")
         self.text_data_CL["ki"] = (f"Ki: {self.ki}", (310, 235), "gray")
-        self.text_data_CL["kd"] = (f"Kd: {self.kd}", (310, 265), "gray")
+        self.text_data_CL["kd"] = (f"Kd: {self.kd}", (310, 265), "gray") 
 
         # Update setpoint for all threads' PID controllers
         self.diff_eqn_thread.pid.setpoint = set_point_height
