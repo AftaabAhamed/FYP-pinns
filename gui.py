@@ -4,9 +4,9 @@ import os
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton,
     QLineEdit, QLabel, QWidget, QGridLayout, QCheckBox, QMessageBox, QComboBox,
-    QTableWidget, QTableWidgetItem
+    QTableWidget, QTableWidgetItem,
 )
-from PyQt5.QtCore import Qt, QThread
+from PyQt5.QtCore import Qt, QThread, QTimer
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.ticker import FuncFormatter
@@ -103,21 +103,21 @@ class MainWindow(QMainWindow):
         self.controls_layout.addWidget(self.setpoint_input)
 
         # PID Parameters: kp, ki, kd
-        self.kp_label = QLabel("Proportional Gain (Kp):")
+        self.kp_label = QLabel("Proportional Gain (Kc):")
         self.controls_layout.addWidget(self.kp_label)
 
         self.kp_input = QLineEdit(f"{self.kp}")
         self.kp_input.setAlignment(Qt.AlignCenter)
         self.controls_layout.addWidget(self.kp_input)
 
-        self.ki_label = QLabel("Integral Gain (Ki):")
+        self.ki_label = QLabel("Integral Gain (𝜏i):")
         self.controls_layout.addWidget(self.ki_label)
 
         self.ki_input = QLineEdit(f"{self.ki}")
         self.ki_input.setAlignment(Qt.AlignCenter)
         self.controls_layout.addWidget(self.ki_input)
 
-        self.kd_label = QLabel("Derivative Gain (Kd):")
+        self.kd_label = QLabel("Derivative Gain (𝜏d):")
         self.controls_layout.addWidget(self.kd_label)
 
         self.kd_input = QLineEdit(f"{self.kd}")
@@ -349,6 +349,9 @@ class MainWindow(QMainWindow):
         self.save_time = None
         self.modelCheck = False
 
+        # Set point plotter for closed loop
+        self.set_point_plotter = 0
+
     def control_tune(self):
         self.setpoint_label.hide()
         self.select_model.hide()
@@ -433,6 +436,8 @@ class MainWindow(QMainWindow):
         self.diff_eqn_thread.open_loop = True
         self.real_system_thread.open_loop = True
         self.pinn_thread.open_loop = True
+        self.transfer_function_thread.open_loop = True
+        self.data_driven_thread.open_loop = True
         self.modelCheck = False
         self.block_diagram.image_path = "./images/block_diagram_OL.png"
         self.block_diagram.text_data = self.text_data_OL
@@ -465,6 +470,8 @@ class MainWindow(QMainWindow):
         self.diff_eqn_thread.open_loop = False
         self.real_system_thread.open_loop = False
         self.pinn_thread.open_loop = False
+        self.transfer_function_thread.open_loop = False
+        self.data_driven_thread.open_loop = False
 
         self.block_diagram.text_font = 10
         self.block_diagram.image_path = "./images/block_diagram_CL.png"
@@ -495,6 +502,7 @@ class MainWindow(QMainWindow):
         try:
             # Retrieve the input values
             set_point_height = float(self.setpoint_input.text())
+            self.set_point_plotter = set_point_height
             self.kp = float(self.kp_input.text())
             self.ki = float(self.ki_input.text())
             self.kd = float(self.kd_input.text())
@@ -547,6 +555,7 @@ class MainWindow(QMainWindow):
         self.height_data = {"Differential": [], "Real System": [], "PINN": [], "Transfer Function": [], "Data Driven": []}
         self.voltage_data = {"Differential": [], "Real System": [], "PINN": [], "Transfer Function": [], "Data Driven": []}
         self.time_data = {"Differential": [], "Real System": [], "PINN": [], "Transfer Function": [], "Data Driven": []}
+        self.set_point_data = []
         self.ax1.clear()
         self.ax2.clear()
 
@@ -593,6 +602,9 @@ class MainWindow(QMainWindow):
 
     def update_plot(self, voltage, height, time_str, model_type):
         """ Update the plots with new data and write to CSV files. """
+
+        # self.ax1.axhline(y = 0.08, color = 'k', linestyle = '--')
+
         self.height_data[model_type].append(height)
         self.voltage_data[model_type].append(voltage)
         self.time_data[model_type].append(time_str)
@@ -633,6 +645,11 @@ class MainWindow(QMainWindow):
             self.ax1.plot(time_data[model[3]], height_data[model[3]], label=f"{model[3]} Model", color="red")
         if self.checkbox_data_driven.isChecked():
             self.ax1.plot(time_data[model[4]], height_data[model[4]], label=f"{model[4]} Model", color="purple")
+
+        # Add horizontal line to the height plot in case of closed loop to indicate set point
+        if self.curr_loop == "CL":
+            # self.set_point_data.append(float(self.setpoint_input.text()))
+            self.ax1.plot(time_data[model[0]], [self.set_point_plotter]*len(time_data[model[0]]), label="Set Point", color="black", linestyle="--")
 
         # Set Y-axis limits
         self.ax1.set_ylim(0, 0.16)
