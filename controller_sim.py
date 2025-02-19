@@ -8,6 +8,7 @@ import math as m
 from scipy.integrate import odeint
 from simple_pid import PID
 import serial
+import serial.tools.list_ports
 from keras import models
 import numpy as np                 
 import pandas as pd
@@ -124,9 +125,26 @@ class RealSystemThread(QThread):
         self.pid.output_limits = (0, 12)  # Constrained PID output to 0-12 volts
         self.open_loop = open_loop
 
+
+    def findSerialPort(self):
+        """
+        Find the serial port for an ESP32 device.
+        Scans available serial ports and returns the device path for an ESP32 board,
+        which typically uses Silicon Labs CP210x or CH340 USB-to-Serial converters.
+        Returns:
+            str: Device path of the ESP32 serial port if found, None otherwise
+        """
+        ports = serial.tools.list_ports.comports()
+        for port in ports:
+            if 'Silicon Labs' in port.manufacturer or 'CP210x' in port.description:
+                return port.device
+            if 'CH340' in port.description:
+                return port.device
+            return None
+
     def run(self):
         try:
-            SERIAL_PORT = 'COM12'
+            SERIAL_PORT = self.findSerialPort()
             BAUD_RATE = 9600
             arduino = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
 
@@ -163,15 +181,6 @@ class RealSystemThread(QThread):
 
     def stop(self):
         self.stop_sim = True
-
-
-from PyQt5.QtCore import QThread, pyqtSignal
-import torch
-import torch.nn as nn
-import numpy as np
-import time
-from collections import deque
-from simple_pid import PID
 
 class PINNModelThread(QThread):
     update_height = pyqtSignal(float, float, float)  # Emit voltage, height, and time
