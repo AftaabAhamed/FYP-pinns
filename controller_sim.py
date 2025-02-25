@@ -61,7 +61,7 @@ class DifferentialEqnThread(QThread):
                 d = 0.008  # Orifice diameter (m)
                 r = 0.185  # Tank radius (m)
                 h0 = 0.025  # Reference height (m)
-                cf = 0.375 # Discharge coefficient
+                cf = 0.335 # Discharge coefficient
 
                 # Interpolated voltage at time t
                 
@@ -195,7 +195,7 @@ class PINNModelThread(QThread):
         self.open_loop = open_loop
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = self.load_pinn_model()
-        self.sequence_length = 30
+        self.sequence_length = 10
         self.input_buffer = deque(maxlen=self.sequence_length)
         self.model.to(self.device)
         

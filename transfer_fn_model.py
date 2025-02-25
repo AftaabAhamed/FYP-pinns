@@ -6,8 +6,8 @@ import time
 
 class TransferFnModel:
     def __init__(self, initial_height=0.025, voltage_input1=5, voltage_input2=10, dt=1, total_time=100, step_time=50):
-        self.num = [0.014]
-        self.den = [350, 1]
+        self.num = [0.011]
+        self.den = [380, 0.9]
         self.sys_tf = signal.TransferFunction(self.num, self.den)
         self.A, self.B, self.C, self.D = signal.tf2ss(self.num, self.den)
         
