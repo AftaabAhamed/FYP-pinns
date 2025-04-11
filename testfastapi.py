@@ -1,6 +1,9 @@
 from typing import Union
 
 from fastapi import FastAPI
+import sqlite3
+import pandas as pd
+from fastapi.responses import JSONResponse
 
 from task import ODEsim,RealSystem
 
@@ -8,19 +11,22 @@ from collections import deque
 
 app = FastAPI()
 
-import sqlite3
 from task import TransferFunctionModel
+
+# Database file path
+DB_PATH = "history.db"
 
 """-----------------ODE----------------"""
 
 ODE_ht = deque([(0,0),(0,0)])
 # stopsim = False
-ode = ODEsim(ode_height=ODE_ht,stop_sim=False, setpoint=0.1)
+ode = ODEsim(ode_height=ODE_ht,stop_sim=True, setpoint=0.1)
 
 @app.get("/ODE/")
 def start_ODE():
-    # if not ode.stop_sim:
-    #     return {"status": "already running"}
+    
+    if not ode.stop_sim:
+        return {"status": "already running"}
 
     status = ode.start()
     return {"status": status}
@@ -79,12 +85,14 @@ def stop_ODE():
 
 real_ht = deque([(0,0),(0,0)])
 
-rs = RealSystem(real_height=real_ht,stop_sim=False,setpoint=0.1)
+rs = RealSystem(real_height=real_ht,stop_sim=True ,setpoint=0.1)
 
 @app.get("/real/")
 def start_real(setpoint : float):
-    if setpoint is not None:
-        rs.setpoint = setpoint
+    # if setpoint is not None:
+    #     rs.setpoint = setpoint
+    if not rs.stop_sim:
+        return {"status": "already running"}
     status = rs.start()
     return {"status": status}
 
@@ -139,10 +147,14 @@ def stop_real():
 tf_ht = deque([(0, 0), (0, 0)])
 
 
-tfm = TransferFunctionModel(height_queue=tf_ht, stop_sim=False, setpoint=0.1)
+tfm = TransferFunctionModel(height_queue=tf_ht, stop_sim=True, setpoint=0.1)
 
 @app.get("/tfm/")
 def start_tfm(setpoint: float = None):
+
+    if not tfm.stop_sim:
+        return {"status": "already running"}
+
     if setpoint is not None:
         tfm.setpoint = setpoint
     status = tfm.start()
@@ -198,3 +210,39 @@ def schedule(schedule : list):
     # rs.schedule = rs.schedule + schedule
 
     return {"message": "Scheduled"}
+
+@app.get("/history/{model_name}")
+def get_history(model_name: str):
+    """
+    Fetch historical data (time, height, voltage) from the database for a given model.
+
+    Args:
+        model_name (str): The name of the model (e.g., "ODEsim", "RealSystem", "TransferFunctionModel").
+
+    Returns:
+        JSONResponse: A JSON object containing the historical data.
+    """
+    # Validate model name
+    valid_models = ["ODEsim", "RealSystem", "TransferFunctionModel"]
+    if model_name not in valid_models:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Invalid model name. Choose from {valid_models}."},
+        )
+
+    # Connect to the database
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        query = f"SELECT time, height, voltage FROM {model_name}"
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+
+        # Convert the DataFrame to a list of dictionaries
+        data = df.to_dict(orient="records")
+        return {"model": model_name, "data": data}
+
+    except sqlite3.Error as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Database error: {e}"},
+        )

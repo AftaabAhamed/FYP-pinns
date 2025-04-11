@@ -14,10 +14,70 @@ import sqlite3
 from transfer_fn_model import TransferFnModel
 import numpy as np
 
+
+
+
+
+# Database Manager Class
+class DatabaseManager:
+    def __init__(self, db_name="history.db"):
+        self.db_name = db_name
+        self.create_tables()
+
+    def create_tables(self):
+        # Create tables using a temporary connection
+        with sqlite3.connect(self.db_name) as connection:
+            cursor = connection.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ODEsim (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    time REAL,
+                    height REAL,
+                    voltage REAL
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS RealSystem (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    time REAL,
+                    height REAL,
+                    voltage REAL
+                )
+            """)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS TransferFunctionModel (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    time REAL,
+                    height REAL,
+                    voltage REAL
+                )
+            """)
+            connection.commit()
+
+    def insert_record(self, table, time, height, voltage):
+        # Create a new connection for each thread
+        with sqlite3.connect(self.db_name) as connection:
+            cursor = connection.cursor()
+            cursor.execute(f"""
+                INSERT INTO {table} (time, height, voltage)
+                VALUES (?, ?, ?)
+            """, (time, height, voltage))
+            connection.commit()
+
+
+
+
+
+
+
+
+
+
 class ODEsim():
     def __init__(self, ode_height,stop_sim,setpoint):
 
         # self.con = sqlite3.connect('ODE.db')
+        self.db_manager = DatabaseManager()
 
         self.ode_height = ode_height
         self.stop_sim = stop_sim
@@ -118,7 +178,8 @@ class ODEsim():
   
             with open(f'data_ODE_{self.start_time_stamp}.csv', 'a') as f:
                 csvwriter = csv.writer(f)
-                csvwriter.writerow([v,h_current, elapsed_time])   
+                csvwriter.writerow([v,h_current, elapsed_time]) 
+                self.db_manager.insert_record("ODEsim", elapsed_time, h_current, v)
 
             if len(self.ode_height) > 50:
                 self.ode_height.popleft()
@@ -149,6 +210,8 @@ class RealSystem():
         self.is_openloop = False
         self.setpoint = setpoint
         self.thread = threading.Thread(target=self.RealSystem)
+
+        self.db_manager = DatabaseManager()
         
         self.vin = 0.0        
         
@@ -221,6 +284,7 @@ class RealSystem():
                     with open(f'data_real_{self.start_time_stamp}.csv', 'a') as f:
                         csvwriter = csv.writer(f)
                         csvwriter.writerow([v,h, elapsed_time]) 
+                        self.db_manager.insert_record("RealSystem", elapsed_time, h, v)
                 except Exception as e:
                         print(f"Invalid data from Arduino: {e}")    
 
@@ -255,9 +319,12 @@ class TransferFunctionModel():
         self.setpoint = setpoint
         self.thread = threading.Thread(target=self.run)
         self.open_loop = open_loop
+        self.start_time_stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
         self.pid = PID(kp, ki, kd, setpoint=self.setpoint)
         self.pid.output_limits = (0, 12)  # Constrain PID output to 0-12 volts
+
+        self.db_manager = DatabaseManager()
 
         self.time_step = 1
         self.tf_model = TransferFnModel(
@@ -312,6 +379,10 @@ class TransferFunctionModel():
                 self.height_queue.append((voltage, h_current, current_time))
                 if len(self.height_queue) > 50:
                     self.height_queue.popleft()
+                with open(f'data_tf_{self.start_time_stamp}.csv', 'a') as f:
+                    csvwriter = csv.writer(f)
+                    csvwriter.writerow([voltage, h_current, current_time])
+                    self.db_manager.insert_record("TransferFunctionModel", current_time, h_current, voltage)
 
         except Exception as e:
             print(f"Error in TransferFunctionModel: {e}")
@@ -334,35 +405,6 @@ class TransferFunctionModel():
 
 """   ......................................................................................................................   """
 
-
-# def data_1(q: deque):
-#     while True:
-#         time.sleep(1)
-#         hprev = q[-1]
-#         newh = hprev+1
-#         q.append(newh)
-#         with open('data1.txt', 'a') as f:
-#             f.write(f'{newh}\n')    
-#         if len(q) > 5:
-#             q.popleft()
-
-# def data_2(q: deque):
-#     while True:
-#         time.sleep(1)
-#         hprev = q[-1]
-#         newh = hprev + 1
-#         q.append(newh)
-#         with open('data2.txt', 'a') as f:
-#             f.write(f'{newh}\n')
-#         if len(q) > 5:
-#             q.popleft()
-
-# def start(q1,q2):
-#     t1 = threading.Thread(target=data_1, args=(q1,))
-#     t2 = threading.Thread(target=data_2, args=(q2,))
-#     t1.start()
-#     t2.start()
-#     return t1, t2
 
 
 # if __name__ == "__main__":

@@ -1,25 +1,13 @@
 import streamlit as st
 import requests
-import sqlite3
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
+import time
+from collections import defaultdict, deque
 
-# Database setup
-conn = sqlite3.connect('data.db', check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS measurements (
-    timestamp TEXT,
-    model TEXT,
-    height REAL,
-    time REAL
-)
-''')
-conn.commit()
-
-# API endpoint configuration (replace with your actual server URL)
-API_URL = "http://localhost:8000"
+# API endpoint configuration (replace with your actual FastAPI server URL)
+API_URL = "http://127.0.0.1:8000"
 
 # Function to send data to server via API with basic error handling
 def send_api_request(endpoint, payload=None, method="post"):
@@ -33,26 +21,38 @@ def send_api_request(endpoint, payload=None, method="post"):
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
-        st.error(f"API Connection Failed: {e}", icon="⚠️")
+        st.error(f"API Connection Failed: {e}")
         return None
 
-# Function to fetch data from FastAPI server periodically and store in database
-def fetch_and_store_data():
-    models = {
-        "ODE": "ODE/data",
-        "Real System": "real/data",
-        "Transfer Function Model": "tfm/data"
+def fetch_data(model):
+    """
+    Fetch historical data (time, height, voltage) from the FastAPI server for a given model.
+
+    Args:
+        model (str): The name of the model (e.g., "ODE", "Real System", "Transfer Function Model").
+
+    Returns:
+        list: A list of dictionaries containing the historical data, or None if an error occurs.
+    """
+    # Map model names to API-compatible model names
+    endpoint_map = {
+        "ODE": "ODEsim",
+        "Real System": "RealSystem",
+        "Transfer Function Model": "TransferFunctionModel"
     }
-    for model_name, endpoint in models.items():
-        data = send_api_request(endpoint, method="get")  # Fetch data from the respective endpoint
-        if data:
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            height = data.get('height', 0.0)
-            time = data.get('time', 0.0)
-            
-            cursor.execute('INSERT INTO measurements (timestamp, model, height, time) VALUES (?, ?, ?, ?)',
-                           (timestamp, model_name, height, time))
-            conn.commit()
+    model_name = endpoint_map.get(model)
+    if not model_name:
+        return None
+
+    try:
+        # Make a GET request to the /history/<model_name> endpoint
+        response = requests.get(f"{API_URL}/history/{model_name}")
+        response.raise_for_status()  # Raise an exception for HTTP errors
+        data = response.json()
+        return data.get("data", [])  # Return the "data" field from the response
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching data for {model}: {e}")
+        return None
 
 # Layout setup using Streamlit columns
 st.set_page_config(layout="wide")  # Set wide layout for better visualization
@@ -109,9 +109,9 @@ with left_col:
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Start All Models"):
-            send_api_request("ODE/", {})
-            send_api_request("real/", {"setpoint": float(setpoint)})
-            send_api_request("tfm/", {"setpoint": float(setpoint)})
+            send_api_request("ODE/", method="get")  # Use GET method for ODE
+            send_api_request("real/", {"setpoint": float(setpoint)})  # POST method for real
+            send_api_request("tfm/", {"setpoint": float(setpoint)})  # POST method for tfm
     with col2:
         if st.button("Stop All Models"):
             send_api_request("ODE/stop", {})
@@ -124,71 +124,53 @@ with left_col:
     real_system_plot = st.checkbox("Real System Only")
     tf_model_plot = st.checkbox("Transfer Function")
 
+# Initialize data history for each model
+data_history = defaultdict(lambda: deque(maxlen=1000))  # Store up to 1000 points for each model
+
 # Right column for real-time plots (7/10 of the screen)
 with right_col:
-    # Retrieve stored data from SQL database for plotting
-    df = pd.read_sql_query('SELECT * FROM measurements ORDER BY timestamp ASC', conn)
+    # Create an empty container for the plot
+    plot_container = st.empty()
 
-    # Height vs Time plot
-    fig1, ax1 = plt.subplots(figsize=(12, 4))  # Extend graph horizontally
-    if not df.empty:
+    # Continuously update the plot
+    while True:
+        # Fetch data for each selected model
         if first_principle_plot:
-            fp_data = df[df['model'] == "ODE"]
-            ax1.plot(pd.to_datetime(fp_data['timestamp']), fp_data['height'], marker='o', linestyle='-', color='blue', label="First Principle Model")
+            ode_data = fetch_data("ODE")
+            if ode_data:
+                data_history["ODE"] = [(entry["time"], entry["height"]) for entry in ode_data]  # Replace with full history
         if real_system_plot:
-            rs_data = df[df['model'] == "Real System"]
-            ax1.plot(pd.to_datetime(rs_data['timestamp']), rs_data['height'], marker='x', linestyle='-', color='orange', label="Real System")
+            real_data = fetch_data("Real System")
+            if real_data:
+                data_history["Real System"] = [(entry["time"], entry["height"]) for entry in real_data]  # Replace with full history
         if tf_model_plot:
-            tf_data = df[df['model'] == "Transfer Function Model"]
-            ax1.plot(pd.to_datetime(tf_data['timestamp']), tf_data['height'], marker='s', linestyle='-', color='green', label="Transfer Function Model")
-        ax1.set_xlabel('Time')
+            tfm_data = fetch_data("Transfer Function Model")
+            if tfm_data:
+                data_history["Transfer Function Model"] = [(entry["time"], entry["height"]) for entry in tfm_data]  # Replace with full history
+
+        # Create a new plot
+        fig1, ax1 = plt.subplots(figsize=(12, 4))  # Extend graph horizontally
+
+        # Plot data for each selected model
+        if first_principle_plot and "ODE" in data_history:
+            times, heights = zip(*data_history["ODE"])
+            ax1.plot(times, heights, marker='o', linestyle='-', color='blue', label="First Principle Model")
+        if real_system_plot and "Real System" in data_history:
+            times, heights = zip(*data_history["Real System"])
+            ax1.plot(times, heights, marker='x', linestyle='-', color='orange', label="Real System")
+        if tf_model_plot and "Transfer Function Model" in data_history:
+            times, heights = zip(*data_history["Transfer Function Model"])
+            ax1.plot(times, heights, marker='s', linestyle='-', color='green', label="Transfer Function Model")
+
+        # Set plot labels and title
+        ax1.set_xlabel('Time (s)')
         ax1.set_ylabel('Height (m)')
         ax1.set_title('Height (m) vs Time')
         ax1.legend()
-        plt.xticks(rotation=45)
         plt.tight_layout()
-    else:
-        ax1.set_title('Height (m) vs Time')
-        ax1.set_xlabel('Time')
-        ax1.set_ylabel('Height (m)')
-    
-    st.pyplot(fig1)
 
-    # Time vs Time plot
-    fig2, ax2 = plt.subplots(figsize=(12, 4))  # Extend graph horizontally
-    if not df.empty:
-        if first_principle_plot:
-            fp_data = df[df['model'] == "ODE"]
-            ax2.plot(pd.to_datetime(fp_data['timestamp']), fp_data['time'], marker='o', linestyle='-', color='blue', label="First Principle Model")
-        if real_system_plot:
-            rs_data = df[df['model'] == "Real System"]
-            ax2.plot(pd.to_datetime(rs_data['timestamp']), rs_data['time'], marker='x', linestyle='-', color='orange', label="Real System")
-        if tf_model_plot:
-            tf_data = df[df['model'] == "Transfer Function Model"]
-            ax2.plot(pd.to_datetime(tf_data['timestamp']), tf_data['time'], marker='s', linestyle='-', color='green', label="Transfer Function Model")
-        ax2.set_xlabel('Time')
-        ax2.set_ylabel('Time (s)')
-        ax2.set_title('Time (s) vs Time')
-        ax2.legend()
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-    else:
-        ax2.set_title('Time (s) vs Time')
-        ax2.set_xlabel('Time')
-        ax2.set_ylabel('Time (s)')
-    
-    st.pyplot(fig2)
+        # Update the plot in the container
+        plot_container.pyplot(fig1)
 
-# Button to manually fetch new data
-if left_col.button("Fetch Latest Data"):
-    fetch_and_store_data()
-
-# Footer with copyright information at the bottom of the page
-st.markdown(
-    """
-    ---
-    
-    © IIoT liked Digital Twin process model controller developed in National Institute of Technology Calicut.
-    
-"""
-)
+        # Add a delay to avoid overwhelming the backend
+        time.sleep(1)
